@@ -12,7 +12,7 @@
 #include <stdint.h>
 
 int sd_wav_init(const char *filename, uint8_t *riff_header_chunk, UINT riff_header_size, UINT *bytes_read);
-int sd_wav_read(const char *filename, uint8_t *chunk_info, UINT chunk_info_size, int skip, UINT *bytes_read);
+int sd_wav_read(const char *filename, uint8_t *buffer, UINT buf_size, int skip, UINT *bytes_read);
 
 
 #endif /* INC_SD_WAV_H_ */

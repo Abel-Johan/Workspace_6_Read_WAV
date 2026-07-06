@@ -53,6 +53,9 @@ SPI_HandleTypeDef hspi1;
 DMA_HandleTypeDef hdma_spi1_rx;
 DMA_HandleTypeDef hdma_spi1_tx;
 
+TIM_HandleTypeDef htim5;
+DMA_HandleTypeDef hdma_tim5_ch1;
+
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
@@ -83,7 +86,14 @@ const uint8_t exp_audio_fmt[2] = {0x01, 0x00};          // 1 for standard PCM WA
 const uint8_t mono[2] = {0x01, 0x00};                   // 1 for mono
 const uint8_t stereo[2] = {0x02, 0x00};                 // 2 for stereo
 
-uint8_t bufr[80];
+int8_t bufr[10240];  // Array to store PCM data immediately from SD card, give 10 KiB = 10240 B of space
+int32_t audio[2560]; // Array to store decimal representation of audio sample, to feed to PWM
+uint16_t sample_idx;  // Variable to store the current sample index among the data in the buffer array
+
+// Initialise variables to store decimal representations of left and right sample
+int32_t left = 0;
+int32_t right = 0;
+
 UINT br;
 /* USER CODE END PV */
 
@@ -93,6 +103,7 @@ static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_TIM5_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -105,6 +116,13 @@ int _write(int fd, unsigned char *buf, int len) {
     HAL_UART_Transmit(&huart2, buf, len, 999);  // Print to the UART
   }
   return len;
+}
+
+void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef *hspi) {
+
+}
+void HAL_SPI_RxHalfCpltCallback(SPI_HandleTypeDef *hspi) {
+
 }
 /* USER CODE END 0 */
 
@@ -141,17 +159,8 @@ int main(void)
   MX_SPI1_Init();
   MX_USART2_UART_Init();
 //  MX_FATFS_Init();
+  MX_TIM5_Init();
   /* USER CODE BEGIN 2 */
-//    sd_mount();
-//  	sd_read_file("test.wav", bufr, sizeof(bufr), &br);
-//
-//  	for (UINT i = 0; i < sizeof(bufr); i++) {
-//  	    printf("%02X ", bufr[i]);
-//  	    if ((i % 16) == 15) printf("\r\n");
-//  	}
-//  	if (br % 16) printf("\n");
-//
-//  	sd_unmount();
 
   // 0. Initialise reading wav file
   // Read first 12 bytes.
@@ -173,8 +182,6 @@ int main(void)
 	  printf("Only .wav files permitted\r\n");
 	  return 1;
   } else printf("Valid .wav file\r\n");
-
-
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -264,6 +271,48 @@ int main(void)
 	  else if (memcmp(chunk_id, exp_data, (int) sizeof(exp_data)) == 0)
 	  {
 		  printf("Processing DATA chunk\r\n");
+
+		  // First, fill the buffer with the first 20480 bytes of PCM samples
+		  sd_wav_read("test.wav", bufr, sizeof(bufr), skip + 230000, &br);
+
+		  // Stereo processing
+		  if (channels_dec == 2)
+		  {
+			  // The key is that in the buffer, element starts that are divisible by block align are left audio
+			  // Element starts that are not divisible by block align are right audio
+			  // And then of course, bear in mind the sample depth which determines how many bytes/elements to encode one left/right sample
+
+			  // Loop across each sample, joint between left and right
+			  // i is the sample number
+			  for (int i = 0; i < ((uint16_t) sizeof(bufr)/block_align_dec); i++)
+			  {
+				  sample_idx = i * block_align_dec;
+				  // Consider both the left and right samples
+				  // j is the byte index within the left and right samples.
+				  for (int j = 0; j < sample_depth_dec; j++)
+				  {
+					  left  = left  | ((int32_t) bufr[sample_idx + j] << (8*j));
+					  right = right | ((int32_t) bufr[sample_idx + sample_depth_dec + j] << (8*j));
+				  }
+
+				  // Calculate average of the left and right.
+				  audio[i] = (int32_t) ((int64_t) left + (int64_t) right)/2;
+			  }
+		  }
+		  // Mono processing
+		  else
+		  {
+			  for (int i = 0; i < ((uint16_t) sizeof(bufr)/block_align_dec); i++)
+			  {
+				  sample_idx = i * block_align_dec;
+
+				  for (int j = 0; j < sample_depth_dec; j++)
+				  {
+					  audio[i] = audio[i] | ((int32_t) bufr[sample_idx + j] << (8*j));
+				  }
+
+			  }
+		  }
 		  // You have now finished reading the PCM data
 		  sd_unmount();
 		  break;
@@ -301,7 +350,7 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
   RCC_OscInitStruct.PLL.PLLM = 4;
-  RCC_OscInitStruct.PLL.PLLN = 100;
+  RCC_OscInitStruct.PLL.PLLN = 96;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 4;
   RCC_OscInitStruct.PLL.PLLR = 2;
@@ -364,6 +413,55 @@ static void MX_SPI1_Init(void)
 }
 
 /**
+  * @brief TIM5 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM5_Init(void)
+{
+
+  /* USER CODE BEGIN TIM5_Init 0 */
+
+  /* USER CODE END TIM5_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM5_Init 1 */
+
+  /* USER CODE END TIM5_Init 1 */
+  htim5.Instance = TIM5;
+  htim5.Init.Prescaler = 20-1;
+  htim5.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim5.Init.Period = 100-1;
+  htim5.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim5.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_PWM_Init(&htim5) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim5, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim5, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM5_Init 2 */
+
+  /* USER CODE END TIM5_Init 2 */
+  HAL_TIM_MspPostInit(&htim5);
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -404,8 +502,12 @@ static void MX_DMA_Init(void)
 
   /* DMA controller clock enable */
   __HAL_RCC_DMA2_CLK_ENABLE();
+  __HAL_RCC_DMA1_CLK_ENABLE();
 
   /* DMA interrupt init */
+  /* DMA1_Stream2_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream2_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream2_IRQn);
   /* DMA2_Stream2_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
