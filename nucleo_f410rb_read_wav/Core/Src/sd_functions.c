@@ -152,7 +152,7 @@ int sd_append_file(const char *filename, const char *text) {
 	return (res == FR_OK && bw == strlen(text)) ? FR_OK : FR_DISK_ERR;
 }
 
-int sd_read_file(const char *filename, char *buffer, UINT bufsize, UINT *bytes_read) {
+int sd_read_file(const char *filename, uint8_t *buffer, UINT bufsize, UINT *bytes_read) {
 	FIL file;
 	*bytes_read = 0;
 
@@ -162,14 +162,20 @@ int sd_read_file(const char *filename, char *buffer, UINT bufsize, UINT *bytes_r
 		return res;
 	}
 
-	res = f_read(&file, buffer, bufsize - 1, bytes_read);
+	// Example f_lseek usage
+//	res = f_lseek(&file, 2);
+//	if (res != FR_OK) {
+//		printf("f_lseek failed with code: %d\r\n", res);
+//		return res;
+//	}
+
+	res = f_read(&file, buffer, bufsize, bytes_read);
 	if (res != FR_OK) {
 		printf("f_read failed with code: %d\r\n", res);
 		f_close(&file);
 		return res;
 	}
 
-	buffer[*bytes_read] = '\0';
 
 	res = f_close(&file);
 	if (res != FR_OK) {

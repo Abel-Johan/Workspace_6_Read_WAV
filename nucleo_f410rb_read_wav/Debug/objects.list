@@ -2,6 +2,7 @@
 "./Core/Src/sd_diskio_spi.o"
 "./Core/Src/sd_functions.o"
 "./Core/Src/sd_spi.o"
+"./Core/Src/sd_wav.o"
 "./Core/Src/stm32f4xx_hal_msp.o"
 "./Core/Src/stm32f4xx_it.o"
 "./Core/Src/syscalls.o"

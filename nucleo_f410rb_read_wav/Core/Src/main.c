@@ -22,6 +22,14 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdio.h>
+#include <string.h>
+
+#include "sd_diskio_spi.h"
+#include "sd_functions.h"
+#include "sd_spi.h"
+
+#include "sd_wav.h"
 
 /* USER CODE END Includes */
 
@@ -42,16 +50,47 @@
 
 /* Private variables ---------------------------------------------------------*/
 SPI_HandleTypeDef hspi1;
+DMA_HandleTypeDef hdma_spi1_rx;
+DMA_HandleTypeDef hdma_spi1_tx;
 
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+uint8_t riff_header_chunk[12];
 
+uint8_t chunk_id[4];
+uint8_t chunk_size[4]; // Array to store chunk size in little-endian mode
+
+// Decimal representations
+uint32_t chunk_size_dec;   // Chunk size
+uint16_t channels_dec;     // Number of channels
+uint32_t sample_rate_dec;  // Sample rate
+uint32_t byte_rate_dec;    // Byte rate
+uint16_t block_align_dec;  // Block align
+uint16_t sample_depth_dec; // Sample depth
+
+uint8_t audio_fmt[2];
+uint8_t channels[2];
+uint8_t sample_rate[4];
+uint8_t byte_rate[4];
+uint8_t block_align[2];
+uint8_t sample_depth[2];
+
+const uint8_t exp_fmt[4] = {0x66, 0x6D, 0x74, 0x20};    // "fmt "
+const uint8_t exp_data[4] = {0x64, 0x61, 0x74, 0x61};   // "data"
+const uint8_t exp_fmt_sz[4] = {0x10, 0x00, 0x00, 0x00}; // 16 for standard PCM WAV
+const uint8_t exp_audio_fmt[2] = {0x01, 0x00};          // 1 for standard PCM WAV
+const uint8_t mono[2] = {0x01, 0x00};                   // 1 for mono
+const uint8_t stereo[2] = {0x02, 0x00};                 // 2 for stereo
+
+uint8_t bufr[80];
+UINT br;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
@@ -60,7 +99,13 @@ static void MX_USART2_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+// Define a custom function to print to the console via UART
+int _write(int fd, unsigned char *buf, int len) {
+  if (fd == 1 || fd == 2) {                     // stdout or stderr ?
+    HAL_UART_Transmit(&huart2, buf, len, 999);  // Print to the UART
+  }
+  return len;
+}
 /* USER CODE END 0 */
 
 /**
@@ -92,20 +137,144 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_SPI1_Init();
   MX_USART2_UART_Init();
 //  MX_FATFS_Init();
   /* USER CODE BEGIN 2 */
+//    sd_mount();
+//  	sd_read_file("test.wav", bufr, sizeof(bufr), &br);
+//
+//  	for (UINT i = 0; i < sizeof(bufr); i++) {
+//  	    printf("%02X ", bufr[i]);
+//  	    if ((i % 16) == 15) printf("\r\n");
+//  	}
+//  	if (br % 16) printf("\n");
+//
+//  	sd_unmount();
+
+  // 0. Initialise reading wav file
+  // Read first 12 bytes.
+  sd_mount();
+  sd_wav_init("test.wav", riff_header_chunk, sizeof(riff_header_chunk), &br);
+
+  // Ensure it is RIFF....WAVE
+  // Because array slicing doesn't exist in C, it is a hassle to use memcmp to verify the riff_header_chunk contents
+  // So just use "brute force"
+  if (riff_header_chunk[0]  != 0x52 || // R
+	  riff_header_chunk[1]  != 0x49 || // I
+	  riff_header_chunk[2]  != 0x46 || // F
+	  riff_header_chunk[3]  != 0x46 || // F
+	  riff_header_chunk[8]  != 0x57 || // W
+	  riff_header_chunk[9]  != 0x41 || // A
+	  riff_header_chunk[10] != 0x56 || // V
+	  riff_header_chunk[11] != 0x45)   // E
+  {
+	  printf("Only .wav files permitted\r\n");
+	  return 1;
+  } else printf("Valid .wav file\r\n");
+
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  uint32_t skip = 12; // RIFF chunk is size 12 so this first initialised value skips to the chunk after RIFF
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+	  // Read the next 4 bytes which is the chunk identifier
+	  sd_wav_read("test.wav", chunk_id, sizeof(chunk_id), skip, &br);
+	  skip += (uint32_t) sizeof(chunk_id); // Progress the skip value
+
+	  // Read the next 4 bytes which is the chunk size
+	  sd_wav_read("test.wav", chunk_size, sizeof(chunk_size), skip, &br);
+	  skip += (uint32_t) sizeof(chunk_size); // Progress the skip value
+	  chunk_size_dec = ((uint32_t) chunk_size[0])       |
+			           ((uint32_t) chunk_size[1] << 8)  |
+					   ((uint32_t) chunk_size[2] << 16) |
+					   ((uint32_t) chunk_size[3] << 24); // Little-endian: the first byte is actually the least significant byte!
+
+	  // Process chunk if the chunk identifier is "fmt "
+	  // This chunk provides info like no. of channels, sample rate, sample depth, etc.
+	  if (memcmp(chunk_id, exp_fmt, (int) sizeof(exp_fmt)) == 0)
+	  {
+		  printf("Processing FORMAT chunk...\r\n");
+
+		  // Verify chunk size = 16 for PCM WAV (i.e., standard, uncompressed PCM WAV)
+		  if (memcmp(chunk_size, exp_fmt_sz, sizeof(exp_fmt_sz)) != 0)
+		  {
+			  printf("Given .wav file not standard PCM\r\n");
+			  return 2;
+		  }
+
+		  // Read the next 2 bytes. This is the "audio format". Verify it is 1 for standard, uncompressed PCM WAV
+		  sd_wav_read("test.wav", audio_fmt, sizeof(audio_fmt), skip, &br);
+		  skip += (uint32_t) sizeof(audio_fmt); // Progress the skip value
+		  if (memcmp(audio_fmt, exp_audio_fmt, sizeof(exp_audio_fmt)) != 0)
+		  {
+			  printf("Given .wav file not standard PCM\r\n");
+			  return 3;
+		  }
+
+		  // Read the next 2 bytes. This is the number of channels. Verify it is 1 or 2 (only support mono or stereo)
+		  sd_wav_read("test.wav", channels, sizeof(channels), skip, &br);
+		  skip += (uint32_t) sizeof(channels); // Progress the skip value
+		  if ((memcmp(channels, mono, sizeof(mono)) != 0) && memcmp(channels, stereo, sizeof(stereo)) != 0)
+		  {
+			  printf("Given .wav file not standard PCM\r\n");
+			  return 3;
+		  }
+		  channels_dec = ((uint32_t) channels[0])       |
+		                 ((uint32_t) channels[1] << 8);
+
+		  // Read the next 4 bytes. This is the sample rate
+		  sd_wav_read("test.wav", sample_rate, sizeof(sample_rate), skip, &br);
+		  skip += (uint32_t) sizeof(sample_rate); // Progress the skip value
+		  sample_rate_dec = ((uint32_t) sample_rate[0])       |
+						    ((uint32_t) sample_rate[1] << 8)  |
+						    ((uint32_t) sample_rate[2] << 16) |
+						    ((uint32_t) sample_rate[3] << 24);
+
+		  // Read the next 4 bytes. This is the byte rate
+		  sd_wav_read("test.wav", byte_rate, sizeof(byte_rate), skip, &br);
+		  skip += (uint32_t) sizeof(byte_rate); // Progress the skip value
+		  byte_rate_dec = ((uint32_t) byte_rate[0])       |
+						  ((uint32_t) byte_rate[1] << 8)  |
+						  ((uint32_t) byte_rate[2] << 16) |
+						  ((uint32_t) byte_rate[3] << 24);
+
+		  // Read the next 2 bytes. This is the block align
+		  sd_wav_read("test.wav", block_align, sizeof(block_align), skip, &br);
+		  skip += (uint32_t) sizeof(block_align); // Progress the skip value
+		  block_align_dec = ((uint32_t) block_align[0])       |
+	                        ((uint32_t) block_align[1] << 8);
+
+		  // Read the next 2 bytes. This is the sample depth
+		  sd_wav_read("test.wav", sample_depth, sizeof(sample_depth), skip, &br);
+		  skip += (uint32_t) sizeof(sample_depth); // Progress the skip value
+		  sample_depth_dec = ((uint32_t) sample_depth[0])       |
+	                         ((uint32_t) sample_depth[1] << 8);
+
+		  // Finish reading fmt chunk
+	  }
+	  // Process chunk if the chunk identifier is "data"
+	  else if (memcmp(chunk_id, exp_data, (int) sizeof(exp_data)) == 0)
+	  {
+		  printf("Processing DATA chunk\r\n");
+		  // You have now finished reading the PCM data
+		  sd_unmount();
+		  break;
+	  }
+	  // If it is not fmt or data, then it's an irrelevant chunk. Skip this chunk
+	  // Irrelevant chunks include LIST (metadata), JUNK, etc.
+	  else
+	  {
+		  skip += chunk_size_dec;
+		  printf("Skipped %4s chunk.\r\n", chunk_id);
+	  }
   }
   /* USER CODE END 3 */
 }
@@ -224,6 +393,25 @@ static void MX_USART2_UART_Init(void)
   /* USER CODE BEGIN USART2_Init 2 */
 
   /* USER CODE END USART2_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA2_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA2_Stream2_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
+  /* DMA2_Stream3_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream3_IRQn);
 
 }
 
