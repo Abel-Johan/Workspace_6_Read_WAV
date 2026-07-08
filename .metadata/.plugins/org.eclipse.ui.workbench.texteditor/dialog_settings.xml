@@ -3,9 +3,19 @@
 	<item key="hasShownOverlayPopupBefore" value="true"/>
 	<item key="replaceBarOpen" value="true"/>
 	<list key="replacehistory">
+		<item value="sd_wav_read_signed"/>
+		<item value="sd_wav_read_unsigned"/>
+		<item value="!="/>
+		<item value="||"/>
+		<item value="riff_header_chunk"/>
 		<item value="UINT *buffer"/>
 	</list>
 	<list key="searchhistory">
+		<item value="sd_wav_read"/>
+		<item value="cpltcallback"/>
+		<item value="=="/>
+		<item value="&amp;&amp;"/>
+		<item value="buffer"/>
 		<item value="char *buffer"/>
 	</list>
 </section>

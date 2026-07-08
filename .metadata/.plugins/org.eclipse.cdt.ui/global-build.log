@@ -1,31 +1,25 @@
-17:54:20 **** Incremental Build of configuration Debug for project nucleo_f410rb_read_wav ****
+16:52:53 **** Incremental Build of configuration Debug for project nucleo_f410rb_read_wav ****
 make -j16 all 
 arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m4 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F410Rx -c -I../Core/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I../Drivers/CMSIS/Include -I../FATFS/Target -I../FATFS/App -I../Middlewares/Third_Party/FatFs/src -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
 ../Core/Src/main.c: In function 'main':
-../Core/Src/main.c:276:43: warning: pointer targets in passing argument 2 of 'sd_wav_read' differ in signedness [-Wpointer-sign]
-  276 |                   sd_wav_read("test.wav", bufr, sizeof(bufr), skip + 230000, &br);
-      |                                           ^~~~
-      |                                           |
-      |                                           int8_t * {aka signed char *}
-In file included from ../Core/Src/main.c:32:
-../Core/Inc/sd_wav.h:15:48: note: expected 'uint8_t *' {aka 'unsigned char *'} but argument is of type 'int8_t *' {aka 'signed char *'}
-   15 | int sd_wav_read(const char *filename, uint8_t *buffer, UINT buf_size, int skip, UINT *bytes_read);
-      |                                       ~~~~~~~~~^~~~~~
+../Core/Src/main.c:412:20: warning: unused variable 'data_bytes_read' [-Wunused-variable]
+  412 |           uint32_t data_bytes_read = sizeof(bufr);
+      |                    ^~~~~~~~~~~~~~~
 arm-none-eabi-gcc -o "nucleo_f410rb_read_wav.elf" @"objects.list"   -mcpu=cortex-m4 -T"D:\Documents\Oxford\Year 3\Summer Internship Stuff\Workspace_6_Read_WAV\nucleo_f410rb_read_wav\STM32F410RBTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="nucleo_f410rb_read_wav.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 Finished building target: nucleo_f410rb_read_wav.elf
  
 arm-none-eabi-size  nucleo_f410rb_read_wav.elf 
 arm-none-eabi-objdump -h -S nucleo_f410rb_read_wav.elf  > "nucleo_f410rb_read_wav.list"
    text	   data	    bss	    dec	    hex	filename
-  43860	    104	  24640	  68604	  10bfc	nucleo_f410rb_read_wav.elf
+  46632	    108	  12364	  59104	   e6e0	nucleo_f410rb_read_wav.elf
 Finished building: default.size.stdout
  
 Finished building: nucleo_f410rb_read_wav.list
  
-17:54:33 **** Incremental Build of configuration Debug for project nucleo_f410rb_read_wav ****
+16:53:09 **** Incremental Build of configuration Debug for project nucleo_f410rb_read_wav ****
 make -j16 all 
 arm-none-eabi-size  nucleo_f410rb_read_wav.elf 
    text	   data	    bss	    dec	    hex	filename
-  43860	    104	  24640	  68604	  10bfc	nucleo_f410rb_read_wav.elf
+  46632	    108	  12364	  59104	   e6e0	nucleo_f410rb_read_wav.elf
 Finished building: default.size.stdout
  

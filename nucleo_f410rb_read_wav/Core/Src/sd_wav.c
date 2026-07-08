@@ -42,6 +42,7 @@ int sd_wav_init(const char *filename, uint8_t *riff_header_chunk, UINT riff_head
 	return FR_OK;
 }
 
+
 int sd_wav_read(const char *filename, uint8_t *buffer, UINT buf_size, int skip, UINT *bytes_read) {
 	FIL file;
 	*bytes_read = 0;
@@ -69,6 +70,5 @@ int sd_wav_read(const char *filename, uint8_t *buffer, UINT buf_size, int skip, 
 	}
 
 	return FR_OK;
-
 
 }

@@ -1,10 +1,10 @@
-17:54:33 **** Incremental Build of configuration Debug for project nucleo_f410rb_read_wav ****
+16:53:09 **** Incremental Build of configuration Debug for project nucleo_f410rb_read_wav ****
 make -j16 all 
 arm-none-eabi-size  nucleo_f410rb_read_wav.elf 
    text	   data	    bss	    dec	    hex	filename
-  43860	    104	  24640	  68604	  10bfc	nucleo_f410rb_read_wav.elf
+  46632	    108	  12364	  59104	   e6e0	nucleo_f410rb_read_wav.elf
 Finished building: default.size.stdout
  
 
-17:54:33 Build Finished. 0 errors, 0 warnings. (took 398ms)
+16:53:09 Build Finished. 0 errors, 0 warnings. (took 386ms)
 
