@@ -20,6 +20,8 @@ int sd_wav_init(const char *filename, uint8_t *riff_header_chunk, UINT riff_head
 	FIL file;
 	*bytes_read = 0;
 
+	printf("\nBeginning to read %s\r\n", filename);
+
 	FRESULT res = f_open(&file, filename, FA_READ);
 	if (res != FR_OK) {
 		printf("f_open failed with code: %d\r\n", res);
@@ -46,6 +48,8 @@ int sd_wav_init(const char *filename, uint8_t *riff_header_chunk, UINT riff_head
 int sd_wav_read(const char *filename, uint8_t *buffer, UINT buf_size, int skip, UINT *bytes_read) {
 	FIL file;
 	*bytes_read = 0;
+
+	printf("\n");
 
 	FRESULT res = f_open(&file, filename, FA_READ);
 	if (res != FR_OK) {

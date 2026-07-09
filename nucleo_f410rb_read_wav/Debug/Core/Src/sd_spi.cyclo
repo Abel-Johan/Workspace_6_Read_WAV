@@ -8,7 +8,7 @@
 ../Core/Src/sd_spi.c:96:16:SD_SendCommand	3
 ../Core/Src/sd_spi.c:115:9:sd_is_sdhc	1
 ../Core/Src/sd_spi.c:120:11:SD_SPI_Init	15
-../Core/Src/sd_spi.c:174:11:SD_ReadBlocks	8
-../Core/Src/sd_spi.c:207:11:SD_ReadMultiBlocks	8
-../Core/Src/sd_spi.c:245:11:SD_WriteBlocks	7
-../Core/Src/sd_spi.c:277:11:SD_WriteMultiBlocks	8
+../Core/Src/sd_spi.c:185:11:SD_ReadBlocks	8
+../Core/Src/sd_spi.c:218:11:SD_ReadMultiBlocks	8
+../Core/Src/sd_spi.c:256:11:SD_WriteBlocks	7
+../Core/Src/sd_spi.c:288:11:SD_WriteMultiBlocks	8

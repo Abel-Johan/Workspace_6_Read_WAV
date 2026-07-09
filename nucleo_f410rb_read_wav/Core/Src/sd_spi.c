@@ -167,6 +167,17 @@ SD_Status SD_SPI_Init(void) {
         if (response != 0x00) return SD_ERROR;
     }
 
+    // This is where we change the Baud Rate Prescaler to make the SD card read/write speed faster
+
+	// Temporarily disable the SPI if we want to change the baud rate
+	__HAL_SPI_DISABLE(&hspi1);
+
+	// Reduce the prescaler to increase the baud rate
+	MODIFY_REG(hspi1.Instance->CR1, SPI_CR1_BR, SPI_BAUDRATEPRESCALER_8);
+
+	// Re-enable the SPI
+	__HAL_SPI_ENABLE(&hspi1);
+
     card_initialized = 1;
     return SD_OK;
 }

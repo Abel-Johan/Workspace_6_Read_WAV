@@ -11,6 +11,8 @@
 		<item value="UINT *buffer"/>
 	</list>
 	<list key="searchhistory">
+		<item value="skip_data"/>
+		<item value="230000"/>
 		<item value="sd_wav_read"/>
 		<item value="cpltcallback"/>
 		<item value="=="/>
