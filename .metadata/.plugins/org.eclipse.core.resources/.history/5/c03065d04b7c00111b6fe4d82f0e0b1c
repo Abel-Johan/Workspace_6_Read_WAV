@@ -201,7 +201,7 @@ static uint32_t pcm_to_ccr(int32_t pcm_amp, const uint32_t ARR, uint16_t bytes_p
 
 // Define a function to repeatedly call to read PCM data from the SD card
 // When doing this, we cannot keep calling sd_wav_read because that function increases user readability but it's slow
-// It has to open and close the file each time it's called, which is not efficient
+// It has to open and close the file each time it's called which is not efficient
 // So for this, just have all the FATFS functions here in main.c
 // Have f_lseek and f_read in process_pcm, and f_open and f_close in main function
 static void process_pcm(uint8_t mode, const uint32_t ARR) {

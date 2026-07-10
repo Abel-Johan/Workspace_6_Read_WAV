@@ -103,9 +103,8 @@ uint32_t ARR;                 // Variable to store ARR value
 
 UINT br;
 
-FIL file; // File variable
-const char filename[255] = "dance_with_somebody.wav"; // Music file name
-FRESULT res; // Result of file operations with FATFS. Mostly useful for debugging.
+FIL file;
+const char[255] filename = "test.wav";
 
 // Define an enumeration variable which will tell the code to refill the first or second half of the bufr/ccr array.
 // refill_request needs to be volatile because it will be accessed by the interrupt
@@ -201,7 +200,7 @@ static uint32_t pcm_to_ccr(int32_t pcm_amp, const uint32_t ARR, uint16_t bytes_p
 
 // Define a function to repeatedly call to read PCM data from the SD card
 // When doing this, we cannot keep calling sd_wav_read because that function increases user readability but it's slow
-// It has to open and close the file each time it's called, which is not efficient
+// It has to open and close the file each time it's called which is not efficient
 // So for this, just have all the FATFS functions here in main.c
 // Have f_lseek and f_read in process_pcm, and f_open and f_close in main function
 static void process_pcm(uint8_t mode, const uint32_t ARR) {
@@ -223,15 +222,7 @@ static void process_pcm(uint8_t mode, const uint32_t ARR) {
 		if (mode == 1)
 		{
 			// Only add audio data to the beginning parts of the buffer
-			res = f_lseek(&file, skip_data);
-
-			res = f_read(&file, bufr, bytes_left, &br);
-			if (res != FR_OK) {
-				printf("f_read failed with code: %d\r\n", res);
-				f_close(&file);
-				return;
-			}
-
+			sd_wav_read("dance_with_somebody.wav", bufr, bytes_left, skip_data, &br);
 			data_bytes_read += bytes_left;
 			skip_data += bytes_left;
 
@@ -285,15 +276,7 @@ static void process_pcm(uint8_t mode, const uint32_t ARR) {
 		} else if (mode == 2)
 		{
 			// Only add audio data to the beginning parts of the buffer
-			res = f_lseek(&file, skip_data);
-
-			res = f_read(&file, bufr + (sizeof(bufr)/2), bytes_left, &br);
-			if (res != FR_OK) {
-				printf("f_read failed with code: %d\r\n", res);
-				f_close(&file);
-				return;
-			}
-
+			sd_wav_read("dance_with_somebody.wav", bufr + (sizeof(bufr)/2), bytes_left, skip_data, &br);
 			data_bytes_read += bytes_left;
 			skip_data += bytes_left;
 
@@ -352,15 +335,7 @@ static void process_pcm(uint8_t mode, const uint32_t ARR) {
 	{
 		// Mode 1 = Case of wanting to replace the first half of the buffer, called by HalfCpltCallback or initial call
 		if (mode == 1) {
-			res = f_lseek(&file, skip_data);
-
-			res = f_read(&file, bufr, sizeof(bufr)/2, &br);
-			if (res != FR_OK) {
-				printf("f_read failed with code: %d\r\n", res);
-				f_close(&file);
-				return;
-			}
-
+			sd_wav_read("dance_with_somebody.wav", bufr, sizeof(bufr)/2, skip_data, &br);
 			data_bytes_read += sizeof(bufr)/2;
 			skip_data += sizeof(bufr)/2;
 
@@ -407,15 +382,7 @@ static void process_pcm(uint8_t mode, const uint32_t ARR) {
 		// Mode 2 = Case of wanting to replace the second half of the buffer, called by CpltCallback or initial call
 		} else if (mode == 2) {
 			// + (sizeof(bufr)/2) to only edit the second half
-			res = f_lseek(&file, skip_data);
-
-			res = f_read(&file, bufr + (sizeof(bufr)/2), sizeof(bufr)/2, &br);
-			if (res != FR_OK) {
-				printf("f_read failed with code: %d\r\n", res);
-				f_close(&file);
-				return;
-			}
-
+			sd_wav_read("dance_with_somebody.wav", bufr + (sizeof(bufr)/2), sizeof(bufr)/2, skip_data, &br);
 			data_bytes_read += sizeof(bufr)/2;
 			skip_data += sizeof(bufr)/2;
 
@@ -524,7 +491,7 @@ int main(void)
   // 0. Initialise reading wav file
   // Read first 12 bytes.
   sd_mount();
-  sd_wav_init(filename, riff_header_chunk, sizeof(riff_header_chunk), &br);
+  sd_wav_init("dance_with_somebody.wav", riff_header_chunk, sizeof(riff_header_chunk), &br);
 
   // Ensure it is RIFF....WAVE
   // Because array slicing doesn't exist in C, it is a hassle to use memcmp to verify the riff_header_chunk contents
@@ -558,11 +525,11 @@ int main(void)
   while (skip < file_size_dec)
   {
 	  // Read the next 4 bytes which is the chunk identifier
-	  sd_wav_read(filename, chunk_id, sizeof(chunk_id), skip, &br);
+	  sd_wav_read("dance_with_somebody.wav", chunk_id, sizeof(chunk_id), skip, &br);
 	  skip += (uint32_t) sizeof(chunk_id); // Progress the skip value
 
 	  // Read the next 4 bytes which is the chunk size
-	  sd_wav_read(filename, chunk_size, sizeof(chunk_size), skip, &br);
+	  sd_wav_read("dance_with_somebody.wav", chunk_size, sizeof(chunk_size), skip, &br);
 	  skip += (uint32_t) sizeof(chunk_size); // Progress the skip value
 	  chunk_size_dec = ((uint32_t) chunk_size[0])       |
 					   ((uint32_t) chunk_size[1] << 8)  |
@@ -610,7 +577,7 @@ int main(void)
   }
 
   // Read the next 2 bytes. This is the "audio format". Verify it is 1 for standard, uncompressed PCM WAV
-  sd_wav_read(filename, audio_fmt, sizeof(audio_fmt), skip_fmt, &br);
+  sd_wav_read("dance_with_somebody.wav", audio_fmt, sizeof(audio_fmt), skip_fmt, &br);
   skip_fmt += (uint32_t) sizeof(audio_fmt); // Progress the skip value
   if (memcmp(audio_fmt, exp_audio_fmt, sizeof(exp_audio_fmt)) != 0)
   {
@@ -619,7 +586,7 @@ int main(void)
   }
 
   // Read the next 2 bytes. This is the number of channels. Verify it is 1 or 2 (only support mono or stereo)
-  sd_wav_read(filename, channels, sizeof(channels), skip_fmt, &br);
+  sd_wav_read("dance_with_somebody.wav", channels, sizeof(channels), skip_fmt, &br);
   skip_fmt += (uint32_t) sizeof(channels); // Progress the skip value
   if ((memcmp(channels, mono, sizeof(mono)) != 0) && memcmp(channels, stereo, sizeof(stereo)) != 0)
   {
@@ -630,7 +597,7 @@ int main(void)
 				 ((uint32_t) channels[1] << 8);
 
   // Read the next 4 bytes. This is the sample rate (in Hz)
-  sd_wav_read(filename, sample_rate, sizeof(sample_rate), skip_fmt, &br);
+  sd_wav_read("dance_with_somebody.wav", sample_rate, sizeof(sample_rate), skip_fmt, &br);
   skip_fmt += (uint32_t) sizeof(sample_rate); // Progress the skip value
   sample_rate_dec = ((uint32_t) sample_rate[0])       |
 					((uint32_t) sample_rate[1] << 8)  |
@@ -638,7 +605,7 @@ int main(void)
 					((uint32_t) sample_rate[3] << 24);
 
   // Read the next 4 bytes. This is the byte rate (in Bps)
-  sd_wav_read(filename, byte_rate, sizeof(byte_rate), skip_fmt, &br);
+  sd_wav_read("dance_with_somebody.wav", byte_rate, sizeof(byte_rate), skip_fmt, &br);
   skip_fmt += (uint32_t) sizeof(byte_rate); // Progress the skip value
   byte_rate_dec = ((uint32_t) byte_rate[0])       |
 				  ((uint32_t) byte_rate[1] << 8)  |
@@ -646,13 +613,13 @@ int main(void)
 				  ((uint32_t) byte_rate[3] << 24);
 
   // Read the next 2 bytes. This is the block align (in bytes per block)
-  sd_wav_read(filename, block_align, sizeof(block_align), skip_fmt, &br);
+  sd_wav_read("dance_with_somebody.wav", block_align, sizeof(block_align), skip_fmt, &br);
   skip_fmt += (uint32_t) sizeof(block_align); // Progress the skip value
   block_align_dec = ((uint32_t) block_align[0])       |
 					((uint32_t) block_align[1] << 8);
 
   // Read the next 2 bytes. This is the sample depth (in bits). Then divide by 8 to get bytes per sample
-  sd_wav_read(filename, sample_depth, sizeof(sample_depth), skip_fmt, &br);
+  sd_wav_read("dance_with_somebody.wav", sample_depth, sizeof(sample_depth), skip_fmt, &br);
   skip_fmt += (uint32_t) sizeof(sample_depth); // Progress the skip value
   bytes_per_sample_dec = (((uint32_t) sample_depth[0])      |
 						 ((uint32_t) sample_depth[1] << 8)) /
@@ -673,11 +640,6 @@ int main(void)
   printf("Processing DATA chunk...\r\n");
 
   // 4a. Open the file
-  FRESULT res = f_open(&file, filename, FA_READ);
-  if (res != FR_OK) {
-	  printf("f_open failed with code: %d\r\n", res);
-	  return res;
-  }
 
   // 4a. Read the first 8192 bytes of data
   process_pcm(1, ARR);
@@ -711,13 +673,6 @@ int main(void)
 	  {
 		  	// You have now finished reading the PCM data
 			HAL_TIM_PWM_Stop_DMA(&htim5, TIM_CHANNEL_1);
-
-			res = f_close(&file);
-			if (res != FR_OK) {
-				printf("f_close failed with code: %d\r\n", res);
-				return res;
-			}
-
 			sd_unmount();
 
 			// Verify that we have read the entire data chunk upon unmount
