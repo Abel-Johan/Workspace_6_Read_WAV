@@ -90,8 +90,8 @@ const uint8_t exp_audio_fmt[2] = {0x01, 0x00};          // 1 for standard PCM WA
 const uint8_t mono[2] = {0x01, 0x00};                   // 1 for mono
 const uint8_t stereo[2] = {0x02, 0x00};                 // 2 for stereo
 
-uint8_t bufr[8192];           // Array to store PCM data immediately from SD card, give 8 KiB = 8192 B of space
-uint32_t ccr[2048];           // Array to store CCR values.
+uint8_t bufr[12288];          // Array to store PCM data immediately from SD card, give 8 KiB = 8192 B of space
+uint32_t ccr[3072];           // Array to store CCR values. The PWM function requires CCR to be a 32-bit integer to work properly.
 uint32_t data_bytes_read = 0; // Variable to store the number of bytes read from the data chunk
 uint32_t skip = 12;       	  // RIFF chunk is size 12 so this first initialised value skips to the chunk after RIFF
 uint32_t skip_fmt = 0;  	  // skip variable to record down the start of the fmt chunk's useful data
@@ -301,7 +301,7 @@ static void process_pcm(uint8_t mode, const uint32_t ARR) {
 					int32_t pcm_amp = (int32_t)(((int64_t)left + (int64_t)right) / 2);
 
 					// B. We then convert the PCM samples into CCR values
-					// + samples/2 to only edit the second half
+					// + samples to only edit the second half
 					ccr[i + samples] = pcm_to_ccr(pcm_amp, ARR, bytes_per_sample_dec);
 				}
 			}
@@ -320,18 +320,6 @@ static void process_pcm(uint8_t mode, const uint32_t ARR) {
 			}
 		}
 
-		// You have now finished reading the PCM data
-	    sd_unmount();
-
-	    // Verify that we have read the entire data chunk upon unmount
-	    printf("Bytes of data read: %lu bytes\r\n", data_bytes_read);
-	    printf("Bytes of data actually there: %lu bytes \r\n", data_size_dec);
-	    printf("DATA chunk processed. Step 4 success.\r\n\n");
-
-
-	    // As this is a bare-metal syste with no OS, it is not a good idea to exit the while(1) loop.
-	    // WFI is Wait For Interrupt. Better than breaking from while loop
-	    __WFI();
 
 	} else
 	{
@@ -431,7 +419,6 @@ static void process_pcm(uint8_t mode, const uint32_t ARR) {
 			}
 		}
 	}
-	int x = 0;
 }
 
 // Function called when first half of the array has been transmitted to PWM
@@ -447,7 +434,7 @@ void HAL_TIM_PWM_PulseFinishedHalfCpltCallback (TIM_HandleTypeDef * htim) {
 // Function called when all of the array, and therefore the second half of the array, has been transmitted to PWM
 // We thus need to change the contents of the second half of the buffer and ccr
 void HAL_TIM_PWM_PulseFinishedCallback (TIM_HandleTypeDef * htim) {
-	if (htim->Instance != TIM5)
+	if (htim->Instance == TIM5)
 	{
 		refill_request = REFILL_SECOND;
 	}
@@ -648,7 +635,7 @@ int main(void)
 
   // 4b. Send to PWM
   // Actually, if audio was stereo to begin with, you'll only use half of the CCR array
-  HAL_TIM_PWM_Start_DMA(&htim5, TIM_CHANNEL_1, (uint32_t *)ccr, sizeof(ccr) / sizeof(ccr[0]) / channels_dec);
+  HAL_TIM_PWM_Start_DMA(&htim5, TIM_CHANNEL_1, (uint32_t *)ccr, sizeof(ccr) / sizeof(ccr[0]));
 
   /* USER CODE END 2 */
 
@@ -659,15 +646,34 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	if (refill_request == REFILL_FIRST)
-	{
-		refill_request = REFILL_NONE;
-		process_pcm(1, ARR);
-	} else if (refill_request == REFILL_SECOND)
-	{
-		refill_request = REFILL_NONE;
-		process_pcm(2, ARR);
-	}
+	  if (data_bytes_read < data_size_dec)
+	  {
+		  if (refill_request == REFILL_FIRST)
+		  	  {
+			  	  refill_request = REFILL_NONE;
+				  process_pcm(1, ARR);
+		      } else if (refill_request == REFILL_SECOND)
+			  {
+			      refill_request = REFILL_NONE;
+				  process_pcm(2, ARR);
+			  }
+	  } else if (data_bytes_read == data_size_dec)
+	  {
+		  	// You have now finished reading the PCM data
+			HAL_TIM_PWM_Stop_DMA(&htim5, TIM_CHANNEL_1);
+			sd_unmount();
+
+			// Verify that we have read the entire data chunk upon unmount
+			printf("Bytes of data read: %lu bytes\r\n", data_bytes_read);
+			printf("Bytes of data actually there: %lu bytes \r\n", data_size_dec);
+			printf("DATA chunk processed. Step 4 success.\r\n\n");
+
+			data_bytes_read += 1;
+
+			// Wait for interrupt
+			__WFI();
+	  }
+
   }
   /* USER CODE END 3 */
 }
@@ -741,7 +747,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_256;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -885,7 +891,7 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pin = SPI1_CS_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
   HAL_GPIO_Init(SPI1_CS_GPIO_Port, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */

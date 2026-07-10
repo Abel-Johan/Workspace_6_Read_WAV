@@ -3,6 +3,10 @@
 	<item key="hasShownOverlayPopupBefore" value="true"/>
 	<item key="replaceBarOpen" value="true"/>
 	<list key="replacehistory">
+		<item value="dance_with_somebody"/>
+		<item value="music"/>
+		<item value="dance_with_somebody.wav"/>
+		<item value="test"/>
 		<item value="sd_wav_read_signed"/>
 		<item value="sd_wav_read_unsigned"/>
 		<item value="!="/>
@@ -11,13 +15,20 @@
 		<item value="UINT *buffer"/>
 	</list>
 	<list key="searchhistory">
-		<item value="skip_data"/>
-		<item value="230000"/>
-		<item value="sd_wav_read"/>
-		<item value="cpltcallback"/>
-		<item value="=="/>
-		<item value="&amp;&amp;"/>
-		<item value="buffer"/>
-		<item value="char *buffer"/>
+		<item value="FR_DISK_ERR"/>
+		<item value="wav"/>
+		<item value="music"/>
+		<item value="dance_with_somebody"/>
+		<item value="test.wav"/>
+		<item value="Length"/>
+		<item value="init"/>
+		<item value="hal_spi_init"/>
+		<item value="_done"/>
+		<item value="dma_tx_done"/>
+		<item value="htim"/>
+		<item value="HAL_DMA_IRQHandler"/>
+		<item value="sample_idx"/>
+		<item value="uint32_t skip_data"/>
+		<item value="process_pcm"/>
 	</list>
 </section>

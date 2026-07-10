@@ -173,6 +173,13 @@ SD_Status SD_SPI_Init(void) {
 	__HAL_SPI_DISABLE(&hspi1);
 
 	// Reduce the prescaler to increase the baud rate
+	// If we want to send PWM signals at 48 kHz (which is equal to the sample rate)
+	// And if one sample is 4 bytes (2 bytes for left and 2 bytes for right channel)
+	// Then we need to read the SD card at an SPI baud rate of 192 KBps = 1.536 Mbps
+	// Since SPI1 takes clock from APB2 which is 96 MHz/96 Mbps, the maximum prescaler according to APB2/prescaler = SPI baud rate
+	// is 62.5. So we can have at most prescaler of 32.
+	// However, this isn't exactly linear as there is also the time needed to tell the SD card that we would like to read, etc.
+	// So lowest prescaler as possible is best.
 	MODIFY_REG(hspi1.Instance->CR1, SPI_CR1_BR, SPI_BAUDRATEPRESCALER_8);
 
 	// Re-enable the SPI

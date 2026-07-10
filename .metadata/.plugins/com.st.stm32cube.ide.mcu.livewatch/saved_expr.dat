@@ -10,3 +10,8 @@ sample_idx
 bytes_per_sample_dec
 audio
 bufr
+data_bytes_read
+skip_data
+ARR
+ccr
+refill_request
