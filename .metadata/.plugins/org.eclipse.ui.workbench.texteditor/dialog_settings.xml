@@ -15,6 +15,9 @@
 		<item value="UINT *buffer"/>
 	</list>
 	<list key="searchhistory">
+		<item value="SPI_BAUDRATEPRESCALER_8"/>
+		<item value="fp"/>
+		<item value="fr_int_err"/>
 		<item value="FR_DISK_ERR"/>
 		<item value="wav"/>
 		<item value="music"/>
@@ -27,8 +30,5 @@
 		<item value="dma_tx_done"/>
 		<item value="htim"/>
 		<item value="HAL_DMA_IRQHandler"/>
-		<item value="sample_idx"/>
-		<item value="uint32_t skip_data"/>
-		<item value="process_pcm"/>
 	</list>
 </section>

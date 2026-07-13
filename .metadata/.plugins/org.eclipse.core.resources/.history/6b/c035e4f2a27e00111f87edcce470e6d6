@@ -26,6 +26,9 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "ff.h"
+#include "ffconf.h"
+
 #include "sd_diskio_spi.h"
 #include "sd_functions.h"
 #include "sd_spi.h"
@@ -90,8 +93,8 @@ const uint8_t exp_audio_fmt[2] = {0x01, 0x00};          // 1 for standard PCM WA
 const uint8_t mono[2] = {0x01, 0x00};                   // 1 for mono
 const uint8_t stereo[2] = {0x02, 0x00};                 // 2 for stereo
 
-uint8_t bufr[8192];           // Array to store PCM data immediately from SD card, give 8 KiB = 8192 B of space
-uint16_t ccr[4096];           // Array to store CCR values.
+uint8_t bufr[12288];          // Array to store PCM data immediately from SD card, give 8 KiB = 8192 B of space
+uint32_t ccr[3072];           // Array to store CCR values. The PWM function requires CCR to be a 32-bit integer to work properly.
 uint32_t data_bytes_read = 0; // Variable to store the number of bytes read from the data chunk
 uint32_t skip = 12;       	  // RIFF chunk is size 12 so this first initialised value skips to the chunk after RIFF
 uint32_t skip_fmt = 0;  	  // skip variable to record down the start of the fmt chunk's useful data
@@ -99,6 +102,10 @@ uint32_t skip_data = 0; 	  // skip variable to record down the start of the data
 uint32_t ARR;                 // Variable to store ARR value
 
 UINT br;
+
+FIL file; // File variable
+const char filename[255] = "dont_stop_believin.wav"; // Music file name
+FRESULT res; // Result of file operations with FATFS. Mostly useful for debugging.
 
 // Define an enumeration variable which will tell the code to refill the first or second half of the bufr/ccr array.
 // refill_request needs to be volatile because it will be accessed by the interrupt
@@ -176,7 +183,7 @@ static int32_t pcm_le_signed32(uint8_t *bufr, uint16_t bytes_per_sample_dec)
 // ARR defines the number of duty cycle levels available, and thus the resolution.
 // Since PWM frequency is 48 kHz, and it is given by f_pwm = (APB TIM1 Clock)/(Prescaler * ARR), ARR cannot be too big so 2000 is the highest practical limit
 // Hence only need to store CCR as a uint16_t.
-static uint16_t pcm_to_ccr(int32_t pcm_amp, const uint32_t ARR, uint16_t bytes_per_sample_dec)
+static uint32_t pcm_to_ccr(int32_t pcm_amp, const uint32_t ARR, uint16_t bytes_per_sample_dec)
 {
 	// Find the maximum possible (signed) amplitude for each sample depth
 	int32_t max_amp = (1 << (bytes_per_sample_dec * 8 - 1)) - 1;
@@ -189,10 +196,14 @@ static uint16_t pcm_to_ccr(int32_t pcm_amp, const uint32_t ARR, uint16_t bytes_p
 	// CCR = centered_pcm_amp/(2*max_amp + 1) * ARR
 	int64_t ccr = (centred_pcm_amp * ARR)/(2*max_amp + 1);
 
-	return (uint16_t) ccr;
+	return (uint32_t) ccr;
 }
 
 // Define a function to repeatedly call to read PCM data from the SD card
+// When doing this, we cannot keep calling sd_wav_read because that function increases user readability but it's slow
+// It has to open and close the file each time it's called, which is not efficient
+// So for this, just have all the FATFS functions here in main.c
+// Have f_lseek and f_read in process_pcm, and f_open and f_close in main function
 static void process_pcm(uint8_t mode, const uint32_t ARR) {
 
 	uint32_t samples = 0;    // Variable to store the number of PCM samples in the buffer to process
@@ -212,7 +223,15 @@ static void process_pcm(uint8_t mode, const uint32_t ARR) {
 		if (mode == 1)
 		{
 			// Only add audio data to the beginning parts of the buffer
-			sd_wav_read("dance_with_somebody.wav", bufr, bytes_left, skip_data, &br);
+			res = f_lseek(&file, skip_data);
+
+			res = f_read(&file, bufr, bytes_left, &br);
+			if (res != FR_OK) {
+				printf("f_read failed with code: %d\r\n", res);
+				f_close(&file);
+				return;
+			}
+
 			data_bytes_read += bytes_left;
 			skip_data += bytes_left;
 
@@ -266,7 +285,15 @@ static void process_pcm(uint8_t mode, const uint32_t ARR) {
 		} else if (mode == 2)
 		{
 			// Only add audio data to the beginning parts of the buffer
-			sd_wav_read("dance_with_somebody.wav", bufr + (sizeof(bufr)/2), bytes_left, skip_data, &br);
+			res = f_lseek(&file, skip_data);
+
+			res = f_read(&file, bufr + (sizeof(bufr)/2), bytes_left, &br);
+			if (res != FR_OK) {
+				printf("f_read failed with code: %d\r\n", res);
+				f_close(&file);
+				return;
+			}
+
 			data_bytes_read += bytes_left;
 			skip_data += bytes_left;
 
@@ -301,7 +328,7 @@ static void process_pcm(uint8_t mode, const uint32_t ARR) {
 					int32_t pcm_amp = (int32_t)(((int64_t)left + (int64_t)right) / 2);
 
 					// B. We then convert the PCM samples into CCR values
-					// + samples/2 to only edit the second half
+					// + samples to only edit the second half
 					ccr[i + samples] = pcm_to_ccr(pcm_amp, ARR, bytes_per_sample_dec);
 				}
 			}
@@ -320,24 +347,20 @@ static void process_pcm(uint8_t mode, const uint32_t ARR) {
 			}
 		}
 
-		// You have now finished reading the PCM data
-	    sd_unmount();
-
-	    // Verify that we have read the entire data chunk upon unmount
-	    printf("Bytes of data read: %lu bytes\r\n", data_bytes_read);
-	    printf("Bytes of data actually there: %lu bytes \r\n", data_size_dec);
-	    printf("DATA chunk processed. Step 4 success.\r\n\n");
-
-
-	    // As this is a bare-metal syste with no OS, it is not a good idea to exit the while(1) loop.
-	    // WFI is Wait For Interrupt. Better than breaking from while loop
-	    __WFI();
 
 	} else
 	{
 		// Mode 1 = Case of wanting to replace the first half of the buffer, called by HalfCpltCallback or initial call
 		if (mode == 1) {
-			sd_wav_read("dance_with_somebody.wav", bufr, sizeof(bufr)/2, skip_data, &br);
+			res = f_lseek(&file, skip_data);
+
+			res = f_read(&file, bufr, sizeof(bufr)/2, &br);
+			if (res != FR_OK) {
+				printf("f_read failed with code: %d\r\n", res);
+				f_close(&file);
+				return;
+			}
+
 			data_bytes_read += sizeof(bufr)/2;
 			skip_data += sizeof(bufr)/2;
 
@@ -384,7 +407,15 @@ static void process_pcm(uint8_t mode, const uint32_t ARR) {
 		// Mode 2 = Case of wanting to replace the second half of the buffer, called by CpltCallback or initial call
 		} else if (mode == 2) {
 			// + (sizeof(bufr)/2) to only edit the second half
-			sd_wav_read("dance_with_somebody.wav", bufr + (sizeof(bufr)/2), sizeof(bufr)/2, skip_data, &br);
+			res = f_lseek(&file, skip_data);
+
+			res = f_read(&file, bufr + (sizeof(bufr)/2), sizeof(bufr)/2, &br);
+			if (res != FR_OK) {
+				printf("f_read failed with code: %d\r\n", res);
+				f_close(&file);
+				return;
+			}
+
 			data_bytes_read += sizeof(bufr)/2;
 			skip_data += sizeof(bufr)/2;
 
@@ -431,7 +462,6 @@ static void process_pcm(uint8_t mode, const uint32_t ARR) {
 			}
 		}
 	}
-	int x = 0;
 }
 
 // Function called when first half of the array has been transmitted to PWM
@@ -447,7 +477,7 @@ void HAL_TIM_PWM_PulseFinishedHalfCpltCallback (TIM_HandleTypeDef * htim) {
 // Function called when all of the array, and therefore the second half of the array, has been transmitted to PWM
 // We thus need to change the contents of the second half of the buffer and ccr
 void HAL_TIM_PWM_PulseFinishedCallback (TIM_HandleTypeDef * htim) {
-	if (htim->Instance != TIM5)
+	if (htim->Instance == TIM5)
 	{
 		refill_request = REFILL_SECOND;
 	}
@@ -487,14 +517,32 @@ int main(void)
   MX_DMA_Init();
   MX_SPI1_Init();
   MX_USART2_UART_Init();
-  MX_FATFS_Init();
+//  MX_FATFS_Init();
   MX_TIM5_Init();
   /* USER CODE BEGIN 2 */
+
+  // This is where we change the Baud Rate Prescaler to make the SD card read/write speed faster
+
+	// Temporarily disable the SPI if we want to change the baud rate
+	__HAL_SPI_DISABLE(&hspi1);
+
+	// Reduce the prescaler to increase the baud rate
+	// If we want to send PWM signals at 48 kHz (which is equal to the sample rate)
+	// And if one sample is 4 bytes (2 bytes for left and 2 bytes for right channel)
+	// Then we need to read the SD card at an SPI baud rate of 192 KBps = 1.536 Mbps
+	// Since SPI1 takes clock from APB2 which is 96 MHz/96 Mbps, the maximum prescaler according to APB2/prescaler = SPI baud rate
+	// is 62.5. So we can have at most prescaler of 32.
+	// However, this isn't exactly linear as there is also the time needed to tell the SD card that we would like to read, etc.
+	// So lowest prescaler as possible is best. Prescaler 8 chosen because it seems beyond this is too fast.
+	MODIFY_REG(hspi1.Instance->CR1, SPI_CR1_BR, SPI_BAUDRATEPRESCALER_8);
+
+	// Re-enable the SPI
+	__HAL_SPI_ENABLE(&hspi1);
 
   // 0. Initialise reading wav file
   // Read first 12 bytes.
   sd_mount();
-  sd_wav_init("dance_with_somebody.wav", riff_header_chunk, sizeof(riff_header_chunk), &br);
+  sd_wav_init(filename, riff_header_chunk, sizeof(riff_header_chunk), &br);
 
   // Ensure it is RIFF....WAVE
   // Because array slicing doesn't exist in C, it is a hassle to use memcmp to verify the riff_header_chunk contents
@@ -528,11 +576,11 @@ int main(void)
   while (skip < file_size_dec)
   {
 	  // Read the next 4 bytes which is the chunk identifier
-	  sd_wav_read("dance_with_somebody.wav", chunk_id, sizeof(chunk_id), skip, &br);
+	  sd_wav_read(filename, chunk_id, sizeof(chunk_id), skip, &br);
 	  skip += (uint32_t) sizeof(chunk_id); // Progress the skip value
 
 	  // Read the next 4 bytes which is the chunk size
-	  sd_wav_read("dance_with_somebody.wav", chunk_size, sizeof(chunk_size), skip, &br);
+	  sd_wav_read(filename, chunk_size, sizeof(chunk_size), skip, &br);
 	  skip += (uint32_t) sizeof(chunk_size); // Progress the skip value
 	  chunk_size_dec = ((uint32_t) chunk_size[0])       |
 					   ((uint32_t) chunk_size[1] << 8)  |
@@ -580,7 +628,7 @@ int main(void)
   }
 
   // Read the next 2 bytes. This is the "audio format". Verify it is 1 for standard, uncompressed PCM WAV
-  sd_wav_read("dance_with_somebody.wav", audio_fmt, sizeof(audio_fmt), skip_fmt, &br);
+  sd_wav_read(filename, audio_fmt, sizeof(audio_fmt), skip_fmt, &br);
   skip_fmt += (uint32_t) sizeof(audio_fmt); // Progress the skip value
   if (memcmp(audio_fmt, exp_audio_fmt, sizeof(exp_audio_fmt)) != 0)
   {
@@ -589,7 +637,7 @@ int main(void)
   }
 
   // Read the next 2 bytes. This is the number of channels. Verify it is 1 or 2 (only support mono or stereo)
-  sd_wav_read("dance_with_somebody.wav", channels, sizeof(channels), skip_fmt, &br);
+  sd_wav_read(filename, channels, sizeof(channels), skip_fmt, &br);
   skip_fmt += (uint32_t) sizeof(channels); // Progress the skip value
   if ((memcmp(channels, mono, sizeof(mono)) != 0) && memcmp(channels, stereo, sizeof(stereo)) != 0)
   {
@@ -600,7 +648,7 @@ int main(void)
 				 ((uint32_t) channels[1] << 8);
 
   // Read the next 4 bytes. This is the sample rate (in Hz)
-  sd_wav_read("dance_with_somebody.wav", sample_rate, sizeof(sample_rate), skip_fmt, &br);
+  sd_wav_read(filename, sample_rate, sizeof(sample_rate), skip_fmt, &br);
   skip_fmt += (uint32_t) sizeof(sample_rate); // Progress the skip value
   sample_rate_dec = ((uint32_t) sample_rate[0])       |
 					((uint32_t) sample_rate[1] << 8)  |
@@ -608,7 +656,7 @@ int main(void)
 					((uint32_t) sample_rate[3] << 24);
 
   // Read the next 4 bytes. This is the byte rate (in Bps)
-  sd_wav_read("dance_with_somebody.wav", byte_rate, sizeof(byte_rate), skip_fmt, &br);
+  sd_wav_read(filename, byte_rate, sizeof(byte_rate), skip_fmt, &br);
   skip_fmt += (uint32_t) sizeof(byte_rate); // Progress the skip value
   byte_rate_dec = ((uint32_t) byte_rate[0])       |
 				  ((uint32_t) byte_rate[1] << 8)  |
@@ -616,13 +664,13 @@ int main(void)
 				  ((uint32_t) byte_rate[3] << 24);
 
   // Read the next 2 bytes. This is the block align (in bytes per block)
-  sd_wav_read("dance_with_somebody.wav", block_align, sizeof(block_align), skip_fmt, &br);
+  sd_wav_read(filename, block_align, sizeof(block_align), skip_fmt, &br);
   skip_fmt += (uint32_t) sizeof(block_align); // Progress the skip value
   block_align_dec = ((uint32_t) block_align[0])       |
 					((uint32_t) block_align[1] << 8);
 
   // Read the next 2 bytes. This is the sample depth (in bits). Then divide by 8 to get bytes per sample
-  sd_wav_read("dance_with_somebody.wav", sample_depth, sizeof(sample_depth), skip_fmt, &br);
+  sd_wav_read(filename, sample_depth, sizeof(sample_depth), skip_fmt, &br);
   skip_fmt += (uint32_t) sizeof(sample_depth); // Progress the skip value
   bytes_per_sample_dec = (((uint32_t) sample_depth[0])      |
 						 ((uint32_t) sample_depth[1] << 8)) /
@@ -642,13 +690,20 @@ int main(void)
   // 4. Process the data chunk
   printf("Processing DATA chunk...\r\n");
 
+  // 4a. Open the file
+  FRESULT res = f_open(&file, filename, FA_READ);
+  if (res != FR_OK) {
+	  printf("f_open failed with code: %d\r\n", res);
+	  return res;
+  }
+
   // 4a. Read the first 8192 bytes of data
   process_pcm(1, ARR);
   process_pcm(2, ARR);
 
   // 4b. Send to PWM
   // Actually, if audio was stereo to begin with, you'll only use half of the CCR array
-  HAL_TIM_PWM_Start_DMA(&htim5, TIM_CHANNEL_1, (uint32_t *)ccr, sizeof(ccr) / sizeof(ccr[0]) / channels_dec);
+  HAL_TIM_PWM_Start_DMA(&htim5, TIM_CHANNEL_1, (uint32_t *)ccr, sizeof(ccr) / sizeof(ccr[0]));
 
   /* USER CODE END 2 */
 
@@ -659,17 +714,41 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	if (refill_request == REFILL_FIRST)
-	{
-		refill_request = REFILL_NONE;
-		process_pcm(1, ARR);
-		printf("Half\r\n");
-	} else if (refill_request == REFILL_SECOND)
-	{
-		refill_request = REFILL_NONE;
-		process_pcm(2, ARR);
-		printf("Full\r\n");
-	}
+	  if (data_bytes_read < data_size_dec)
+	  {
+		  if (refill_request == REFILL_FIRST)
+		  	  {
+			  	  refill_request = REFILL_NONE;
+				  process_pcm(1, ARR);
+		      } else if (refill_request == REFILL_SECOND)
+			  {
+			      refill_request = REFILL_NONE;
+				  process_pcm(2, ARR);
+			  }
+	  } else if (data_bytes_read == data_size_dec)
+	  {
+		  	// You have now finished reading the PCM data
+			HAL_TIM_PWM_Stop_DMA(&htim5, TIM_CHANNEL_1);
+
+			res = f_close(&file);
+			if (res != FR_OK) {
+				printf("f_close failed with code: %d\r\n", res);
+				return res;
+			}
+
+			sd_unmount();
+
+			// Verify that we have read the entire data chunk upon unmount
+			printf("Bytes of data read: %lu bytes\r\n", data_bytes_read);
+			printf("Bytes of data actually there: %lu bytes \r\n", data_size_dec);
+			printf("DATA chunk processed. Step 4 success.\r\n\n");
+
+			data_bytes_read += 1;
+
+			// Wait for interrupt
+			__WFI();
+	  }
+
   }
   /* USER CODE END 3 */
 }
@@ -887,7 +966,7 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pin = SPI1_CS_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
   HAL_GPIO_Init(SPI1_CS_GPIO_Port, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
