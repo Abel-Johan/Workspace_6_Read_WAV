@@ -90,6 +90,7 @@ const uint8_t exp_fmt[4] = {0x66, 0x6D, 0x74, 0x20};    // "fmt "
 const uint8_t exp_data[4] = {0x64, 0x61, 0x74, 0x61};   // "data"
 const uint32_t exp_fmt_sz_dec = 16;                  // 16 for standard PCM WAV
 const uint8_t exp_audio_fmt[2] = {0x01, 0x00};          // 1 for standard PCM WAV
+const uint8_t mono[2] = {0x01, 0x00};                   // 1 for mono
 const uint8_t stereo[2] = {0x02, 0x00};                 // 2 for stereo
 
 uint8_t bufr[12288];          // Array to store PCM data immediately from SD card, give 8 KiB = 8192 B of space
@@ -244,28 +245,43 @@ static void process_pcm(uint8_t mode, const uint32_t ARR) {
 			samples = sizeof(bufr) / 2 / block_align_dec;
 
 			// We first convert each set of <no. of channels * sample depth> bytes into one (signed) integer representing a mono audio voltage
-
-			// The key is that in the buffer, element starts that are divisible by block align are left audio
-			// Element starts that are not divisible by block align are right audio
-			// And then of course, bear in mind the sample depth which determines how many bytes/elements to encode one left/right sample
-
-			// Loop across each sample, joint between left and right
-			// i is the sample number
-			for (int i = 0; i < samples; i++)
+			// Stereo processing
+			if (channels_dec == 2)
 			{
-				sample_idx = i * block_align_dec;
+				// The key is that in the buffer, element starts that are divisible by block align are left audio
+				// Element starts that are not divisible by block align are right audio
+				// And then of course, bear in mind the sample depth which determines how many bytes/elements to encode one left/right sample
 
-				// Consider both the left and right samples
-				int32_t left  = pcm_le_signed32(&bufr[sample_idx], bytes_per_sample_dec);
-				int32_t right = pcm_le_signed32(&bufr[sample_idx + bytes_per_sample_dec], bytes_per_sample_dec);
+				// Loop across each sample, joint between left and right
+				// i is the sample number
+				for (int i = 0; i < samples; i++)
+				{
+					sample_idx = i * block_align_dec;
 
-				// Calculate average of the left and right.
-				int32_t pcm_amp = (int32_t)(((int64_t)left + (int64_t)right) / 2);
+					// Consider both the left and right samples
+					int32_t left  = pcm_le_signed32(&bufr[sample_idx], bytes_per_sample_dec);
+					int32_t right = pcm_le_signed32(&bufr[sample_idx + bytes_per_sample_dec], bytes_per_sample_dec);
 
-				// B. We then convert the PCM samples into CCR values
-				ccr[i] = pcm_to_ccr(pcm_amp, ARR, bytes_per_sample_dec);
+					// Calculate average of the left and right.
+					int32_t pcm_amp = (int32_t)(((int64_t)left + (int64_t)right) / 2);
+
+					// B. We then convert the PCM samples into CCR values
+					ccr[i] = pcm_to_ccr(pcm_amp, ARR, bytes_per_sample_dec);
+				}
 			}
+			// Mono processing
+			else
+			{
+				for (int i = 0; i < samples; i++)
+				{
+					sample_idx = i * block_align_dec;
 
+					int32_t pcm_amp = pcm_le_signed32(&bufr[sample_idx], bytes_per_sample_dec);
+
+					// B. We then convert the PCM samples into CCR values
+					ccr[i] = pcm_to_ccr(pcm_amp, ARR, bytes_per_sample_dec);
+				}
+			}
 		} else if (mode == 2)
 		{
 			// Only add audio data to the beginning parts of the buffer
@@ -291,29 +307,47 @@ static void process_pcm(uint8_t mode, const uint32_t ARR) {
 			samples = sizeof(bufr) / 2 / block_align_dec;
 
 			// We first convert each set of <no. of channels * sample depth> bytes into one (signed) integer representing a mono audio voltage
-
-			// The key is that in the buffer, element starts that are divisible by block align are left audio
-			// Element starts that are not divisible by block align are right audio
-			// And then of course, bear in mind the sample depth which determines how many bytes/elements to encode one left/right sample
-
-			// Loop across each sample, joint between left and right
-			// i is the sample number
-			for (int i = 0; i < samples; i++)
+			// Stereo processing
+			if (channels_dec == 2)
 			{
-				sample_idx = i * block_align_dec;
+				// The key is that in the buffer, element starts that are divisible by block align are left audio
+				// Element starts that are not divisible by block align are right audio
+				// And then of course, bear in mind the sample depth which determines how many bytes/elements to encode one left/right sample
 
-				// Consider both the left and right samples
-				int32_t left  = pcm_le_signed32(&bufr[sample_idx] + (sizeof(bufr)/2), bytes_per_sample_dec);
-				int32_t right = pcm_le_signed32(&bufr[sample_idx + bytes_per_sample_dec] + (sizeof(bufr)/2), bytes_per_sample_dec);
+				// Loop across each sample, joint between left and right
+				// i is the sample number
+				for (int i = 0; i < samples; i++)
+				{
+					sample_idx = i * block_align_dec;
 
-				// Calculate average of the left and right.
-				int32_t pcm_amp = (int32_t)(((int64_t)left + (int64_t)right) / 2);
+					// Consider both the left and right samples
+					int32_t left  = pcm_le_signed32(&bufr[sample_idx] + (sizeof(bufr)/2), bytes_per_sample_dec);
+					int32_t right = pcm_le_signed32(&bufr[sample_idx + bytes_per_sample_dec] + (sizeof(bufr)/2), bytes_per_sample_dec);
 
-				// B. We then convert the PCM samples into CCR values
-				// + samples to only edit the second half
-				ccr[i + samples] = pcm_to_ccr(pcm_amp, ARR, bytes_per_sample_dec);
+					// Calculate average of the left and right.
+					int32_t pcm_amp = (int32_t)(((int64_t)left + (int64_t)right) / 2);
+
+					// B. We then convert the PCM samples into CCR values
+					// + samples to only edit the second half
+					ccr[i + samples] = pcm_to_ccr(pcm_amp, ARR, bytes_per_sample_dec);
+				}
+			}
+			// Mono processing
+			else
+			{
+				for (int i = 0; i < samples; i++)
+				{
+					sample_idx = i * block_align_dec;
+
+					int32_t pcm_amp = pcm_le_signed32(&bufr[sample_idx] + (sizeof(bufr)/2), bytes_per_sample_dec);
+
+					// B. We then convert the PCM samples into CCR values
+					ccr[i + samples] = pcm_to_ccr(pcm_amp, ARR, bytes_per_sample_dec);
+				}
 			}
 		}
+
+
 	} else
 	{
 		// Mode 1 = Case of wanting to replace the first half of the buffer, called by HalfCpltCallback or initial call
@@ -333,28 +367,43 @@ static void process_pcm(uint8_t mode, const uint32_t ARR) {
 			samples = sizeof(bufr) / 2 / block_align_dec;
 
 			// We first convert each set of <no. of channels * sample depth> bytes into one (signed) integer representing a mono audio voltage
-
-			// The key is that in the buffer, element starts that are divisible by block align are left audio
-			// Element starts that are not divisible by block align are right audio
-			// And then of course, bear in mind the sample depth which determines how many bytes/elements to encode one left/right sample
-
-			// Loop across each sample, joint between left and right
-			// i is the sample number
-			for (int i = 0; i < samples; i++)
+			// Stereo processing
+			if (channels_dec == 2)
 			{
-				sample_idx = i * block_align_dec;
+				// The key is that in the buffer, element starts that are divisible by block align are left audio
+				// Element starts that are not divisible by block align are right audio
+				// And then of course, bear in mind the sample depth which determines how many bytes/elements to encode one left/right sample
 
-				// Consider both the left and right samples
-				int32_t left  = pcm_le_signed32(&bufr[sample_idx], bytes_per_sample_dec);
-				int32_t right = pcm_le_signed32(&bufr[sample_idx + bytes_per_sample_dec], bytes_per_sample_dec);
+				// Loop across each sample, joint between left and right
+				// i is the sample number
+				for (int i = 0; i < samples; i++)
+				{
+					sample_idx = i * block_align_dec;
 
-				// Calculate average of the left and right.
-				int32_t pcm_amp = (int32_t)(((int64_t)left + (int64_t)right) / 2);
+					// Consider both the left and right samples
+					int32_t left  = pcm_le_signed32(&bufr[sample_idx], bytes_per_sample_dec);
+					int32_t right = pcm_le_signed32(&bufr[sample_idx + bytes_per_sample_dec], bytes_per_sample_dec);
 
-				// B. We then convert the PCM samples into CCR values
-				ccr[i] = pcm_to_ccr(pcm_amp, ARR, bytes_per_sample_dec);
+					// Calculate average of the left and right.
+					int32_t pcm_amp = (int32_t)(((int64_t)left + (int64_t)right) / 2);
+
+					// B. We then convert the PCM samples into CCR values
+					ccr[i] = pcm_to_ccr(pcm_amp, ARR, bytes_per_sample_dec);
+				}
 			}
+			// Mono processing
+			else
+			{
+				for (int i = 0; i < samples; i++)
+				{
+					sample_idx = i * block_align_dec;
 
+					int32_t pcm_amp = pcm_le_signed32(&bufr[sample_idx], bytes_per_sample_dec);
+
+					// B. We then convert the PCM samples into CCR values
+					ccr[i] = pcm_to_ccr(pcm_amp, ARR, bytes_per_sample_dec);
+				}
+			}
 		// Mode 2 = Case of wanting to replace the second half of the buffer, called by CpltCallback or initial call
 		} else if (mode == 2) {
 			// + (sizeof(bufr)/2) to only edit the second half
@@ -373,27 +422,43 @@ static void process_pcm(uint8_t mode, const uint32_t ARR) {
 			samples = sizeof(bufr) / 2 / block_align_dec;
 
 			// We first convert each set of <no. of channels * sample depth> bytes into one (signed) integer representing a mono audio voltage
-
-			// The key is that in the buffer, element starts that are divisible by block align are left audio
-			// Element starts that are not divisible by block align are right audio
-			// And then of course, bear in mind the sample depth which determines how many bytes/elements to encode one left/right sample
-
-			// Loop across each sample, joint between left and right
-			// i is the sample number
-			for (int i = 0; i < samples; i++)
+			// Stereo processing
+			if (channels_dec == 2)
 			{
-				sample_idx = i * block_align_dec;
+				// The key is that in the buffer, element starts that are divisible by block align are left audio
+				// Element starts that are not divisible by block align are right audio
+				// And then of course, bear in mind the sample depth which determines how many bytes/elements to encode one left/right sample
 
-				// Consider both the left and right samples
-				int32_t left  = pcm_le_signed32(&bufr[sample_idx] + (sizeof(bufr)/2), bytes_per_sample_dec);
-				int32_t right = pcm_le_signed32(&bufr[sample_idx + bytes_per_sample_dec] + (sizeof(bufr)/2), bytes_per_sample_dec);
+				// Loop across each sample, joint between left and right
+				// i is the sample number
+				for (int i = 0; i < samples; i++)
+				{
+					sample_idx = i * block_align_dec;
 
-				// Calculate average of the left and right.
-				int32_t pcm_amp = (int32_t)(((int64_t)left + (int64_t)right) / 2);
+					// Consider both the left and right samples
+					int32_t left  = pcm_le_signed32(&bufr[sample_idx] + (sizeof(bufr)/2), bytes_per_sample_dec);
+					int32_t right = pcm_le_signed32(&bufr[sample_idx + bytes_per_sample_dec] + (sizeof(bufr)/2), bytes_per_sample_dec);
 
-				// B. We then convert the PCM samples into CCR values
-				// + samples/2 to only edit the second half
-				ccr[i + samples] = pcm_to_ccr(pcm_amp, ARR, bytes_per_sample_dec);
+					// Calculate average of the left and right.
+					int32_t pcm_amp = (int32_t)(((int64_t)left + (int64_t)right) / 2);
+
+					// B. We then convert the PCM samples into CCR values
+					// + samples/2 to only edit the second half
+					ccr[i + samples] = pcm_to_ccr(pcm_amp, ARR, bytes_per_sample_dec);
+				}
+			}
+			// Mono processing
+			else
+			{
+				for (int i = 0; i < samples; i++)
+				{
+					sample_idx = i * block_align_dec;
+
+					int32_t pcm_amp = pcm_le_signed32(&bufr[sample_idx] + (sizeof(bufr)/2), bytes_per_sample_dec);
+
+					// B. We then convert the PCM samples into CCR values
+					ccr[i + samples] = pcm_to_ccr(pcm_amp, ARR, bytes_per_sample_dec);
+				}
 			}
 		}
 	}
@@ -571,12 +636,12 @@ int main(void)
 	  return 3;
   }
 
-  // Read the next 2 bytes. This is the number of channels. Verify it is 2 (only support stereo)
+  // Read the next 2 bytes. This is the number of channels. Verify it is 1 or 2 (only support mono or stereo)
   sd_wav_read(filename, channels, sizeof(channels), skip_fmt, &br);
   skip_fmt += (uint32_t) sizeof(channels); // Progress the skip value
-  if (memcmp(channels, stereo, sizeof(stereo)) != 0)
+  if ((memcmp(channels, mono, sizeof(mono)) != 0) && memcmp(channels, stereo, sizeof(stereo)) != 0)
   {
-	  printf("Given .wav file not stereo.\r\n");
+	  printf("Given .wav file not standard PCM.\r\n");
 	  return 4;
   }
   channels_dec = ((uint32_t) channels[0])       |

@@ -244,28 +244,30 @@ static void process_pcm(uint8_t mode, const uint32_t ARR) {
 			samples = sizeof(bufr) / 2 / block_align_dec;
 
 			// We first convert each set of <no. of channels * sample depth> bytes into one (signed) integer representing a mono audio voltage
-
-			// The key is that in the buffer, element starts that are divisible by block align are left audio
-			// Element starts that are not divisible by block align are right audio
-			// And then of course, bear in mind the sample depth which determines how many bytes/elements to encode one left/right sample
-
-			// Loop across each sample, joint between left and right
-			// i is the sample number
-			for (int i = 0; i < samples; i++)
+			// Stereo processing
+			if (channels_dec == 2)
 			{
-				sample_idx = i * block_align_dec;
+				// The key is that in the buffer, element starts that are divisible by block align are left audio
+				// Element starts that are not divisible by block align are right audio
+				// And then of course, bear in mind the sample depth which determines how many bytes/elements to encode one left/right sample
 
-				// Consider both the left and right samples
-				int32_t left  = pcm_le_signed32(&bufr[sample_idx], bytes_per_sample_dec);
-				int32_t right = pcm_le_signed32(&bufr[sample_idx + bytes_per_sample_dec], bytes_per_sample_dec);
+				// Loop across each sample, joint between left and right
+				// i is the sample number
+				for (int i = 0; i < samples; i++)
+				{
+					sample_idx = i * block_align_dec;
 
-				// Calculate average of the left and right.
-				int32_t pcm_amp = (int32_t)(((int64_t)left + (int64_t)right) / 2);
+					// Consider both the left and right samples
+					int32_t left  = pcm_le_signed32(&bufr[sample_idx], bytes_per_sample_dec);
+					int32_t right = pcm_le_signed32(&bufr[sample_idx + bytes_per_sample_dec], bytes_per_sample_dec);
 
-				// B. We then convert the PCM samples into CCR values
-				ccr[i] = pcm_to_ccr(pcm_amp, ARR, bytes_per_sample_dec);
+					// Calculate average of the left and right.
+					int32_t pcm_amp = (int32_t)(((int64_t)left + (int64_t)right) / 2);
+
+					// B. We then convert the PCM samples into CCR values
+					ccr[i] = pcm_to_ccr(pcm_amp, ARR, bytes_per_sample_dec);
+				}
 			}
-
 		} else if (mode == 2)
 		{
 			// Only add audio data to the beginning parts of the buffer
