@@ -103,7 +103,7 @@ uint32_t ARR;                 // Variable to store ARR value
 UINT br;
 
 FIL file; // File variable
-const char filename[255] = "love_on_top.wav"; // Music file name
+const char filename[255] = "dont_stop_believin.wav"; // Music file name
 FRESULT res; // Result of file operations with FATFS. Mostly useful for debugging.
 
 // Define an enumeration variable which will tell the code to refill the first or second half of the bufr/ccr array.
@@ -207,10 +207,6 @@ static void process_pcm(uint8_t mode, const uint32_t ARR) {
 
 	uint32_t samples = 0;    // Variable to store the number of PCM samples in the buffer to process
 	uint16_t sample_idx = 0; // Variable to store the current sample index among the data in the buffer array
-
-	//	  // Then, iteratively send PWM data corresponding to the PCM samples until we reach file end
-	//	  while (data_bytes_read < data_size_dec)
-	//	  {
 
 	// Ensure we are not near the end of the file yet
 	if ((data_bytes_read + (sizeof(bufr)/2)) > data_size_dec)
@@ -392,7 +388,7 @@ static void process_pcm(uint8_t mode, const uint32_t ARR) {
 				int32_t pcm_amp = (int32_t)(((int64_t)left + (int64_t)right) / 2);
 
 				// B. We then convert the PCM samples into CCR values
-				// + samples/2 to only edit the second half
+				// + samples to only edit the second half
 				ccr[i + samples] = pcm_to_ccr(pcm_amp, ARR, bytes_per_sample_dec);
 			}
 		}
